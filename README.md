@@ -111,4 +111,4 @@ PORT=3000 HOSTNAME=127.0.0.1 node .next/standalone/server.js
 
 2026年11月1日、既存の設計書の変更履歴を保ったまま、GUアプリ全体を単一リポジトリへ統合しました。接続先は `https://github.com/shiochisss/gu-app.git` です。Sourcetreeでは「既存のローカルリポジトリを追加」で `GUアプリ` フォルダそのものを選択します。`gu-docs/`・`frontend/`・`backend/` を個別に追加する必要はありません。既存のGitHub上の `gu-docs` は残しています。移行前のバックアップは `.migration-backups/` にあり、Gitには登録されません。
 
-確認の記録と設計書の整合修正は [ステップ1実装結果](gu-docs/06_ステップ1実装結果.md) を参照してください。CI通過を確認した後、ステップ2で業務用のテーブルとデモデータを作ります。
+確認の記録と設計書の整合修正は [ステップ1実装結果](gu-docs/06_ステップ1実装結果.md) を参照してください。[初回CI](https://github.com/shiochisss/gu-app/actions/runs/41278392482)はBackend・Frontendとも成功しました。次のステップ2で業務用のテーブルとデモデータを作ります。
