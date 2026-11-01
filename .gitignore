@@ -1,0 +1,17 @@
+node_modules/
+.next/
+.swc/
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.env
+.env.local
+.env.*
+!.env.example
+coverage/
+test-results/
+playwright-report/
+.DS_Store
+*.tsbuildinfo
+.migration-backups/
