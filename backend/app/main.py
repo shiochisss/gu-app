@@ -1,3 +1,4 @@
+import hmac
 import logging
 from contextlib import asynccontextmanager
 from time import perf_counter
@@ -10,11 +11,18 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from starlette.exceptions import HTTPException
 
+from app.api.auth import router as auth_router
+from app.api.internal import router as internal_router
+from app.api.operations import router as operations_router
+from app.api.orders import router as orders_router
+from app.api.staff_stock import router as staff_stock_router
+from app.api.stores import router as stores_router
 from app.clock import Clock, SystemClock
 from app.config import Settings, get_settings
 from app.db import create_db_engine, create_session_factory, get_db
-from app.errors import error_response, http_error, validation_error
+from app.errors import ApiError, api_error, error_response, http_error, validation_error
 from app.logging import configure_logging
+from app.payments.gateway import StripePaymentGateway
 from app.schemas.common import HealthResponse
 
 
@@ -39,8 +47,16 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None) -> 
     )
     app.state.settings = settings
     app.state.clock = clock
+    app.state.payment_gateway = StripePaymentGateway(settings.stripe_secret_key.get_secret_value())
     app.state.engine = engine
     app.state.session_factory = create_session_factory(engine)
+    app.include_router(auth_router)
+    app.include_router(internal_router)
+    app.include_router(orders_router)
+    app.include_router(operations_router)
+    app.include_router(stores_router)
+    app.include_router(staff_stock_router)
+    app.add_exception_handler(ApiError, api_error)
     app.add_exception_handler(RequestValidationError, validation_error)
     app.add_exception_handler(HTTPException, http_error)
 
@@ -54,7 +70,18 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None) -> 
         start = perf_counter()
         failed = False
         try:
-            response = await call_next(request)
+            if (
+                request.url.path.startswith("/api/v1/")
+                and request.url.path != "/api/v1/payments/webhook"
+            ):
+                supplied = request.headers.get("X-BFF-Secret", "").encode()
+                expected = settings.bff_shared_secret.get_secret_value().encode()
+                if not hmac.compare_digest(supplied, expected):
+                    response = error_response(request, 403, "FORBIDDEN")
+                else:
+                    response = await call_next(request)
+            else:
+                response = await call_next(request)
         except Exception:
             failed = True
             response = error_response(request, 500, "INTERNAL_ERROR")

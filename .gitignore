@@ -15,3 +15,5 @@ playwright-report/
 .DS_Store
 *.tsbuildinfo
 .migration-backups/
+
+.release/

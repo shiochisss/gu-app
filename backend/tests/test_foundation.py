@@ -11,7 +11,6 @@ from fastapi import Query
 from fastapi.testclient import TestClient
 from pydantic import Field, ValidationError
 from sqlalchemy import select, text
-from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
 
 from app.clock import FakeClock, SystemClock
@@ -39,27 +38,20 @@ def test_local_docs_and_openapi(settings):
         assert client.get("/openapi.json").status_code == 200
 
 
-def test_healthz_real_postgres(settings):
-    import os
-
-    url_text = os.getenv("TEST_DATABASE_URL")
-    if not url_text:
-        pytest.skip("TEST_DATABASE_URL is required for PostgreSQL integration")
-    url = make_url(url_text)
-    # Reject unsafe targets before opening a connection. No app DB reset is performed.
-    assert url.drivername == "postgresql+psycopg"
-    assert url.database == "pickup_test", "専用のpickup_testデータベースだけ使用できます"
+def test_healthz_real_mysql(settings, mysql_engine):
+    url_text = mysql_engine.url.render_as_string(hide_password=False)
     test_settings = settings.model_copy(
         update={"database_url": settings.database_url.__class__(url_text)}
     )
     app = create_app(test_settings)
-    assert app.state.engine.dialect.name == "postgresql"
+    assert app.state.engine.dialect.name == "mysql"
     assert not app.state.engine.dialect.is_async
     with TestClient(app) as client:
         with app.state.engine.connect() as conn:
             assert conn.execute(select(1)).scalar_one() == 1
-            version = int(conn.execute(text("SHOW server_version_num")).scalar_one())
-            assert 170000 <= version < 180000
+            version = conn.execute(text("SELECT VERSION()")).scalar_one()
+            assert version.startswith("8.4.")
+            assert conn.execute(text("SELECT @@session.time_zone")).scalar_one() == "+00:00"
         result = client.get("/healthz")
         assert result.status_code == 200
         assert result.json() == {"status": "ok"}

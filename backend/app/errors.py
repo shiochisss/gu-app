@@ -7,16 +7,57 @@ from app.schemas.common import ErrorResponse, FieldError
 
 MESSAGES = {
     "VALIDATION_ERROR": "入力内容を確認してください。",
-    "NOT_FOUND": "対象が見つかりません。",
+    "CSRF_REJECTED": "画面を再読み込みしてから、もう一度お試しください。",
+    "UNAUTHENTICATED": "ログインしてください。",
+    "TOKEN_EXPIRED": "ログインの有効期限が切れました。",
+    "INVALID_CREDENTIALS": "メールアドレスまたはパスワードが正しくありません。",
     "FORBIDDEN": "この操作は行えません。",
+    "NOT_FOUND": "対象が見つかりません。",
+    "STORE_NOT_FOUND": "対象が見つかりません。",
+    "PRODUCT_NOT_FOUND": "対象が見つかりません。",
+    "ORDER_NOT_FOUND": "対象が見つかりません。",
+    "EMAIL_ALREADY_REGISTERED": "このメールアドレスは登録済みです。",
+    "CONFLICTING_UPDATE": "ほかの操作で内容が更新されました。最新の内容を確認してください。",
+    "CALCULATION_CHANGED": "金額または準備完了予定が変わりました。内容を確認してください。",
+    "ESTIMATE_EXPIRED": "確認画面の有効期限が切れました。もう一度確認してください。",
+    "INSUFFICIENT_STOCK": "販売できる在庫が足りません。",
+    "INVALID_STATE": "現在の状態ではこの操作は行えません。",
+    "IDEMPOTENCY_IN_PROGRESS": "処理中です。しばらくしてから確認してください。",
+    "IDEMPOTENCY_KEY_REUSED": "同じ操作番号で別の内容が送信されました。",
+    "ORDER_LIMIT_EXCEEDED": "1回の注文は合計10点までです。",
+    "STORE_NOT_ACCEPTING": "この店舗は現在、注文の受付を停止しています。",
+    "ORDER_CLOSED": "本日の注文受付は終了しました。",
+    "OUT_OF_STOCK": "在庫が足りない商品があります。",
+    "CAPACITY_FULL": "混雑のため、閉店までに準備が間に合いません。",
+    "TERMS_NOT_AGREED": "受取期限と期限を過ぎた場合の扱いを確認してください。",
+    "PAYMENT_DECLINED": "カードでのお支払いができませんでした。別のカードをお試しください。",
+    "CANCEL_NOT_ALLOWED": "このご注文は取り消せません。",
+    "INVALID_PICKUP_CODE": "QRコードまたは受取コードが正しくありません。",
+    "RATE_LIMITED": "試行回数が多すぎます。しばらくしてからお試しください。",
+    "NO_BUSINESS_DAY": "営業日を判定できませんでした。店舗の営業時間を確認してください。",
+    "PAYMENT_PROVIDER_ERROR": "決済サービスに接続できませんでした。",
     "INTERNAL_ERROR": "エラーが発生しました。時間をおいてお試しください。",
 }
+
+
+class ApiError(Exception):
+    def __init__(self, status: int, code: str, *, headers=None, **payload):
+        self.status = status
+        self.code = code
+        self.headers = headers or {}
+        self.payload = payload
+
+
+def api_error(request: Request, exc: ApiError) -> JSONResponse:
+    response = error_response(request, exc.status, exc.code, **exc.payload)
+    response.headers.update(exc.headers)
+    return response
 
 
 def error_response(request: Request, status: int, code: str, **kwargs) -> JSONResponse:
     body = ErrorResponse(
         code=code,
-        message=MESSAGES[code],
+        message=kwargs.pop("message", MESSAGES[code]),
         trace_id=request.state.request_id,
         **kwargs,
     )

@@ -1,0 +1,48 @@
+name: Scheduled Jobs
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+    inputs:
+      daily:
+        description: Run daily cleanup and inventory checks
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: scheduled-pickup-jobs
+  cancel-in-progress: false
+jobs:
+  run:
+    if: vars.DEPLOYMENT_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      BACKEND_URL: ${{ secrets.BACKEND_URL }}
+      JOB_SECRET: ${{ secrets.JOB_SECRET }}
+      DAILY: ${{ github.event.schedule == '0 18 * * *' || inputs.daily == true }}
+    steps:
+      - name: Invoke authenticated jobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$BACKEND_URL" == https://* && -n "$JOB_SECRET" ]] || { echo 'Configure BACKEND_URL and JOB_SECRET.'; exit 1; }
+          body='{}'
+          if [[ "$DAILY" == true ]]; then body='{"jobs":["J-06","J-07"]}'; fi
+          response=$(mktemp)
+          header=$(mktemp)
+          chmod 600 "$header"
+          trap 'rm -f "$response" "$header"' EXIT
+          printf 'X-Job-Secret: %s\nContent-Type: application/json\n' "$JOB_SECRET" > "$header"
+          curl --fail-with-body --silent --show-error --connect-timeout 15 --max-time 150 \
+            -X POST --header "@$header" --data "$body" "${BACKEND_URL%/}/internal/jobs/run" -o "$response"
+          python3 - "$response" <<'PY'
+          import json,sys
+          value=json.load(open(sys.argv[1]))
+          for item in value.get('results',[]):
+              print(item['job'],item['result'],item['processedCount'])
+          if any(item['result']=='ERROR' for item in value.get('results',[])):
+              raise SystemExit(1)
+          PY

@@ -1,0 +1,72 @@
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { CheckoutPage, CheckoutProvider, PaymentForm } from "../src/components/checkout";
+import { apiFetch, ApiError } from "../src/lib/api";
+const mockReplace = jest.fn(); const mockPush = jest.fn();
+const mockSubmit = jest.fn(); const mockToken = jest.fn(); const mockNext = jest.fn();
+const mockCart = { storeId: "store", items: [{ productId: "product", productVariantId: "variant", quantity: 2 }], shortagePolicy: "CANCEL_ALL" };
+jest.mock("next/navigation", () => ({ useRouter: () => ({ replace: mockReplace, push: mockPush }), useSearchParams: () => new URLSearchParams() }));
+jest.mock("@stripe/stripe-js", () => ({ loadStripe: jest.fn() }));
+jest.mock("@stripe/react-stripe-js", () => ({ Elements: ({ children }: { children: React.ReactNode }) => children, PaymentElement: () => <div>カード入力</div>, useStripe: () => ({ createConfirmationToken: mockToken, handleNextAction: mockNext }), useElements: () => ({ submit: mockSubmit }) }));
+jest.mock("@/components/runtime", () => ({ useSession: () => ({ user: { userId: "buyer", role: "CUSTOMER" } }), useCartStore: () => ({ cart: mockCart }) }));
+jest.mock("@/lib/store", () => ({ updateSnapshot: jest.fn() }));
+jest.mock("@/lib/api", () => ({ ...jest.requireActual("../src/lib/api"), apiFetch: jest.fn() }));
+const send = jest.mocked(apiFetch);
+const preview = { accepted: true, estimateId: "estimate", storeId: "store", storeName: "テスト新宿店", items: [{ productVariantId: "variant", productName: "シャツ", sku: "SKU", colorName: "白", size: "M", quantity: 2, unitPriceYen: 990, lineAmountYen: 1980 }], totalQuantity: 2, totalAmountYen: 1980, shortagePolicy: "CANCEL_ALL", estimatedReadyAt: "2030-11-03T17:29:00+09:00", estimateExpiresAt: "2030-11-03T17:10:00+09:00", pickupDeadlineRuleText: "受取期限の説明", overduePolicyText: "期限後の扱いの全文" };
+const draft = { estimate: preview, signature: "test", userId: "buyer", agreed: true } as Parameters<typeof PaymentForm>[0]["draft"];
+beforeEach(() => { jest.clearAllMocks(); mockSubmit.mockResolvedValue({}); mockToken.mockResolvedValue({ confirmationToken: { id: "ctoken_one" } }); mockNext.mockResolvedValue({}); });
+test("C-06 shows the full terms and requires agreement before payment", async () => {
+  send.mockResolvedValue(preview);
+  render(<CheckoutProvider><CheckoutPage/></CheckoutProvider>);
+  expect(await screen.findByText("期限後の扱いの全文")).toBeInTheDocument();
+  const proceed = screen.getByRole("button", { name: "支払手続きへ進む" });
+  expect(proceed).toBeDisabled();
+  fireEvent.click(screen.getByRole("checkbox")); fireEvent.click(proceed);
+  expect(mockPush).toHaveBeenCalledWith("/checkout/payment");
+});
+test("C-06 expiry re-estimates and resets agreement", async () => {
+  jest.useFakeTimers(); jest.setSystemTime(new Date("2030-11-03T17:09:59+09:00"));
+  send.mockResolvedValueOnce(preview).mockResolvedValueOnce({ ...preview, estimateId: "new", estimateExpiresAt: "2030-11-03T17:20:00+09:00", estimatedReadyAt: "2030-11-03T17:30:00+09:00" });
+  render(<CheckoutProvider><CheckoutPage/></CheckoutProvider>);
+  await act(async () => {});
+  fireEvent.click(screen.getByRole("checkbox"));
+  await act(async () => { jest.advanceTimersByTime(1000); });
+  expect(send).toHaveBeenCalledTimes(2);
+  expect(screen.getByRole("checkbox")).not.toBeChecked();
+  expect(screen.getByText(/準備完了予定が変わりました/)).toBeInTheDocument();
+  jest.useRealTimers();
+});
+test("C-07 retries an unknown response with the same token, body and key", async () => {
+  send.mockRejectedValueOnce(new ApiError(0,"NETWORK_ERROR","通信できませんでした")).mockResolvedValueOnce({ orderId:"order", status:"RECEIVED", paymentStatus:"AUTHORIZED" });
+  render(<PaymentForm draft={draft}/>);
+  fireEvent.submit(screen.getByRole("button", { name:"注文を確定する" }).closest("form")!);
+  expect(await screen.findByText("通信できませんでした")).toBeInTheDocument();
+  fireEvent.submit(screen.getByRole("button", { name:"同じ注文を再試行" }).closest("form")!);
+  await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/orders/order/complete"));
+  expect(mockToken).toHaveBeenCalledTimes(1);
+  expect(send.mock.calls[0][1]).toEqual(send.mock.calls[1][1]);
+});
+test("C-07 confirms server state and navigates after authentication is closed", async () => {
+  send.mockResolvedValueOnce({ orderId:"order", nextAction:{clientSecret:"pi_secret"} }).mockResolvedValueOnce({});
+  mockNext.mockRejectedValueOnce(new Error("closed"));
+  render(<PaymentForm draft={draft}/>);
+  fireEvent.submit(screen.getByRole("button", { name:"注文を確定する" }).closest("form")!);
+  await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/orders/order/complete"));
+  expect(send).toHaveBeenLastCalledWith("/api/v1/orders/order/payment/refresh", { method:"POST" });
+});
+test("C-07 declined authorization returns for a fresh estimate", async () => {
+  send.mockRejectedValueOnce(new ApiError(422,"PAYMENT_DECLINED","拒否されました"));
+  render(<PaymentForm draft={draft}/>);
+  fireEvent.submit(screen.getByRole("button", { name:"注文を確定する" }).closest("form")!);
+  await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/checkout?reason=PAYMENT_DECLINED"));
+});
+test("C-07 guards rapid submissions while Stripe creates a token", async () => {
+  let complete!: (value: object) => void;
+  mockToken.mockReturnValue(new Promise(resolve => { complete = resolve; }));
+  send.mockResolvedValue({ orderId:"order" });
+  render(<PaymentForm draft={draft}/>);
+  const form=screen.getByRole("button",{name:"注文を確定する"}).closest("form")!;
+  fireEvent.submit(form); fireEvent.submit(form);
+  await waitFor(() => expect(mockToken).toHaveBeenCalledTimes(1));
+  await act(async () => { complete({confirmationToken:{id:"ctoken_one"}}); });
+  expect(send).toHaveBeenCalledTimes(1);
+});

@@ -1,1 +1,17 @@
 @import "tailwindcss";
+@theme { --color-ink: #1F2933; --color-brand: #1F4E8C; }
+@layer base {
+  body { margin: 0; color: #1F2933; background: #FFFFFF; font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; font-size: 16px; -webkit-font-smoothing: antialiased; }
+  button, input, select { font: inherit; }
+  button:not(:disabled), a { cursor: pointer; }
+  button:disabled { cursor: not-allowed; }
+  :focus-visible { outline: 3px solid #87ACDF; outline-offset: 3px; }
+  ::selection { background: #D9E8FC; }
+}
+@layer components {
+  .primary { @apply inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-[#1F4E8C] px-5 py-3 text-sm font-bold text-white transition hover:bg-[#183E70] disabled:bg-[#DCE3EC] disabled:text-[#7B8B9B]; }
+  .secondary { @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[#D9E2EC] bg-white px-4 py-2.5 text-sm font-semibold text-[#1F4E8C] transition hover:bg-[#F5F7FA] disabled:opacity-50; }
+  .field { @apply min-h-12 w-full rounded-lg border border-[#C7D2DF] bg-white px-3.5 py-3 text-sm text-[#1F2933] placeholder:text-[#9AA9B8] focus:border-[#1F4E8C] focus:ring-2 focus:ring-[#1F4E8C]/10 focus:outline-none aria-invalid:border-[#B42318]; }
+  .field-label { @apply mb-2 block text-sm font-semibold; }
+  .field-error { @apply mt-2 text-xs text-[#B42318]; }
+}

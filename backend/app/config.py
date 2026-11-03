@@ -3,7 +3,7 @@ from typing import Literal
 
 from pydantic import AnyHttpUrl, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from sqlalchemy.engine import make_url
+from sqlalchemy.engine import URL, make_url
 
 MAX_ORDER_QUANTITY = 10
 WORK_MINUTES_PER_ITEM = 2
@@ -38,7 +38,14 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", hide_input_in_errors=True)
 
     app_env: Literal["local", "azure-test", "production"]
-    database_url: SecretStr
+    database_url: SecretStr | None = None
+    database_host: str | None = None
+    database_port: int = 3306
+    database_name: str | None = None
+    database_user: SecretStr | None = None
+    database_password: SecretStr | None = None
+    database_ssl: bool = True
+    seed_password: SecretStr | None = None
     test_database_url: SecretStr | None = None
     jwt_secret: SecretStr
     qr_secret: SecretStr
@@ -63,11 +70,16 @@ class Settings(BaseSettings):
         if value is not None:
             try:
                 url = make_url(value.get_secret_value())
-                valid = url.drivername == "postgresql+psycopg" and bool(url.database)
+                valid = (
+                    url.drivername == "mysql+pymysql"
+                    and bool(url.database)
+                    and set(url.query) <= {"charset"}
+                    and url.query.get("charset", "utf8mb4") == "utf8mb4"
+                )
             except Exception:
                 valid = False
             if not valid:
-                raise ValueError("PostgreSQLの同期psycopg接続URLを指定してください")
+                raise ValueError("MySQLの同期PyMySQL接続URLを指定してください（charset=utf8mb4）")
         return value
 
     @field_validator("jwt_secret", "qr_secret", "bff_shared_secret", "job_secret")
@@ -86,6 +98,23 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_related_settings(self) -> "Settings":
+        if self.database_url is None and not all(
+            [
+                self.database_host,
+                self.database_name,
+                self.database_user and self.database_user.get_secret_value(),
+                self.database_password and self.database_password.get_secret_value(),
+            ]
+        ):
+            raise ValueError("DB接続URL、またはホスト・DB名・ユーザー名・パスワードが必要です")
+        if not 1 <= self.database_port <= 65535:
+            raise ValueError("DBポートは1〜65535で指定してください")
+        if not self.database_ssl and self.connection_url().host not in {
+            "localhost",
+            "127.0.0.1",
+            "::1",
+        }:
+            raise ValueError("ローカルPC以外のMySQL接続ではTLSが必要です")
         if self.jwt_secret == self.qr_secret:
             raise ValueError("JWT_SECRETとQR_SECRETは別の値にしてください")
         if self.mail_mode == "smtp" and not all(
@@ -99,6 +128,19 @@ class Settings(BaseSettings):
         ):
             raise ValueError("SMTPモードにはSMTP接続設定とMAIL_FROMが必要です")
         return self
+
+    def connection_url(self) -> URL:
+        if self.database_url is not None:
+            return make_url(self.database_url.get_secret_value())
+        return URL.create(
+            "mysql+pymysql",
+            host=self.database_host,
+            port=self.database_port,
+            database=self.database_name,
+            username=self.database_user.get_secret_value() if self.database_user else None,
+            password=self.database_password.get_secret_value() if self.database_password else None,
+            query={"charset": "utf8mb4"},
+        )
 
 
 @lru_cache

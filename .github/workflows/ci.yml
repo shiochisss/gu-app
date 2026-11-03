@@ -12,18 +12,19 @@ jobs:
       run:
         working-directory: backend
     services:
-      postgres:
-        image: postgres:17
+      mysql:
+        image: mysql:8.4
         env:
-          POSTGRES_USER: pickup_app
-          POSTGRES_PASSWORD: pickup_ci
-          POSTGRES_DB: pickup_test
-        ports: [5432:5432]
+          MYSQL_ROOT_PASSWORD: pickup_ci_root
+          MYSQL_DATABASE: pickup_test
+          MYSQL_USER: pickup_app
+          MYSQL_PASSWORD: pickup_ci
+        ports: [3306:3306]
         options: >-
-          --health-cmd "pg_isready -U pickup_app -d pickup_test"
-          --health-interval 5s --health-timeout 3s --health-retries 10
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -u root -ppickup_ci_root --silent"
+          --health-interval 5s --health-timeout 3s --health-retries 30
     env:
-      TEST_DATABASE_URL: postgresql+psycopg://pickup_app:pickup_ci@localhost:5432/pickup_test
+      TEST_DATABASE_URL: mysql+pymysql://pickup_app:pickup_ci@127.0.0.1:3306/pickup_test?charset=utf8mb4
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

@@ -51,7 +51,7 @@ FastAPIの入力エラー（既定は422）は400 `VALIDATION_ERROR` に変換�
 
 `fieldErrors[].code` の値：`REQUIRED`（必須）、`INVALID_FORMAT`（形式違い）、`OUT_OF_RANGE`（数値・日時の範囲外）、`TOO_LONG`（文字数超過）、`INVALID_VALUE`（列挙値以外・重複など）。`field` はJSONのパス（例：`items[0].quantity`）。
 
-検索文字列（`q`・`sku`）を `LIKE`・`ILIKE` に使うときは、`\`・`%`・`_` を `\` でエスケープし、`ESCAPE '\'` を指定する。
+検索文字列（`q`・`sku`）を `LIKE`（検索対象列に `utf8mb4_0900_ai_ci` を適用） に使うときは、`\`・`%`・`_` を `\` でエスケープし、`ESCAPE '\'` を指定する。
 
 ### 1.4 エラーコード一覧
 
@@ -101,7 +101,7 @@ FastAPIの入力エラー（既定は422）は400 `VALIDATION_ERROR` に変換�
 | `pa_at` | アクセストークン（JWT） | HttpOnly、Secure、SameSite=Lax、Path=/、Max-Age=900 |
 | `pa_rt` | リフレッシュトークン | HttpOnly、Secure、SameSite=Strict、Path=/api/v1、Max-Age=604800 |
 
-`FRONTEND_BASE_URL` が `http://localhost` で始まる場合だけ Secure を外す（ローカル開発用）。トークンをレスポンス本文やJavaScriptに渡さない。
+`FRONTEND_BASE_URL` がhttpで、ホストがlocalhost・127.0.0.1・::1のいずれかの場合だけSecureを外す（ローカル開発用）。ローカルの別名でページを開いた場合は、設定された正規のOriginへリダイレクトしてOriginの完全一致を維持する。トークンをレスポンス本文やJavaScriptに渡さない。
 
 ### 2.3 認証APIの特別な扱い
 
